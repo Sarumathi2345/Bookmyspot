@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>BookMySpot</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      min-height: 100vh;
+      padding: 20px;
+      background-image: linear-gradient(rgba(76, 29, 149, 0.75), rgba(102, 126, 234, 0.75)),
+        url('https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1400&q=80');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+    }
+    .brand { text-align: center; margin-bottom: 20px; }
+    .brand h1 { color: white; font-size: 32px; margin: 0; text-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .brand span { color: #ffe58a; }
+    .brand p { color: #f0eaff; margin: 4px 0 0 0; font-size: 14px; }
+    .card { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    h2 { color: #4c1d95; margin-top: 0; font-size: 22px; }
+    h3 { color: #4c1d95; margin-top: 28px; border-top: 2px solid #f0eaff; padding-top: 20px; }
+    label { font-size: 13px; color: #666; font-weight: 600; margin-top: 12px; display: block; }
+    select, input {
+      display: block; margin: 6px 0 14px 0; padding: 10px 12px; width: 100%;
+      border: 2px solid #e0d9f5; border-radius: 8px; font-size: 14px; background: #faf9ff;
+      transition: border-color 0.2s;
+    }
+    select:focus, input:focus { outline: none; border-color: #764ba2; }
+    button {
+      display: block; margin: 10px 0; padding: 12px; width: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    #message { font-weight: 600; padding: 10px; border-radius: 8px; text-align: center; }
+    #message:not(:empty) { background: #e8f9ee; color: #1a7f4e; }
+    #message.error { background: #fde8e8; color: #c0392b; }
+    .booking {
+      border-left: 4px solid #764ba2; background: #faf9ff; padding: 12px 14px;
+      margin: 8px 0; border-radius: 6px; font-size: 14px; color: #444;
+    }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <h1>Book<span>My</span>Spot</h1>
+    <p>Find and reserve a room, instantly.</p>
+  </div>
+
+  <div class="card">
+    <h2>📅 Book a Resource</h2>
+
+    <div style="background:#f0eaff; padding:16px; border-radius:10px; margin-bottom:20px;">
+      <label style="margin-top:0;">✨ Or type your booking in plain English</label>
+      <input type="text" id="nlText" placeholder="e.g. Conference Room A tomorrow at 3pm for 2 hours">
+      <button type="button" onclick="parseText()" style="background:#4c1d95;">Fill Form</button>
+      <p id="nlMessage" style="font-size:13px; margin:4px 0 0 0;"></p>
+    </div>
+
+    <label>Resource</label>
+    <select id="resource"></select>
+
+    <label>Your name</label>
+    <input type="text" id="userName" placeholder="Enter your name">
+
+    <label>Start time</label>
+    <input type="datetime-local" id="start">
+
+    <label>End time</label>
+    <input type="datetime-local" id="end">
+
+    <button onclick="book()">Book Now</button>
+    <p id="message"></p>
+    <div id="suggestions"></div>
+
+    <h3>Current Bookings</h3>
+    <div id="bookings"></div>
+  </div>
+
+<script>
+async function loadResources() {
+  const res = await fetch('/resources');
+  const data = await res.json();
+  const sel = document.getElementById('resource');
+  sel.innerHTML = data.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  loadBookings();
+}
+
+async function loadBookings() {
+  const resId = document.getElementById('resource').value;
+  const res = await fetch(`/bookings/${resId}`);
+  const data = await res.json();
+  document.getElementById('bookings').innerHTML = data.map(b =>
+    `<div class="booking">👤 <strong>${b.user}</strong><br>${b.start.replace('T',' ')} → ${b.end.replace('T',' ')}</div>`).join('') || "<p style='color:#999'>No bookings yet.</p>";
+}
+
+async function book() {
+  const body = {
+    resource_id: parseInt(document.getElementById('resource').value),
+    user_name: document.getElementById('userName').value,
+    start_time: document.getElementById('start').value,
+    end_time: document.getElementById('end').value
+  };
+  const res = await fetch('/bookings', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  const msgEl = document.getElementById('message');
+  if (res.ok) {
+    msgEl.textContent = "✅ " + data.message; msgEl.className = ''; loadBookings();
+    document.getElementById('suggestions').innerHTML = '';
+  } else {
+    msgEl.textContent = "⚠️ " + data.error; msgEl.className = 'error';
+    showSuggestions();
+  }
+}
+
+async function showSuggestions() {
+  const resId = document.getElementById('resource').value;
+  const startVal = document.getElementById('start').value;
+  if (!startVal) return;
+  const date = startVal.split('T')[0];
+
+  const res = await fetch(`/suggest/${resId}?date=${date}&duration=60`);
+  const slots = await res.json();
+
+  const container = document.getElementById('suggestions');
+  if (slots.length === 0) {
+    container.innerHTML = "<p style='color:#999;font-size:13px'>No free slots found that day.</p>";
+    return;
+  }
+  container.innerHTML = "<p style='font-size:13px;color:#666;margin-top:10px'>Try one of these instead:</p>" +
+    slots.map(s => {
+      const startTime = s.start.slice(11,16);
+      const endTime = s.end.slice(11,16);
+      return `<button type="button" style="background:#f0eaff;color:#4c1d95;font-size:13px;padding:8px;margin:4px 0"
+        onclick="document.getElementById('start').value='${s.start}'; document.getElementById('end').value='${s.end}';">
+        ${startTime} - ${endTime}</button>`;
+    }).join('');
+}
+
+async function parseText() {
+  const text = document.getElementById('nlText').value;
+  const msgEl = document.getElementById('nlMessage');
+  if (!text) return;
+
+  const res = await fetch('/parse', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text})
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    msgEl.textContent = "⚠️ " + data.error;
+    msgEl.style.color = '#c0392b';
+    return;
+  }
+
+  document.getElementById('resource').value = data.resource_id;
+  document.getElementById('start').value = data.start.slice(0,16);
+  document.getElementById('end').value = data.end.slice(0,16);
+  msgEl.textContent = `✅ Understood: ${data.resource_name}, filled in the form below — check it and click "Book Now"`;
+  msgEl.style.color = '#1a7f4e';
+  loadBookings();
+}
+
+document.getElementById('resource').addEventListener('change', loadBookings);
+loadResources();
+</script>
+</body>
+</html>
