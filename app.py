@@ -33,15 +33,30 @@ def parse_booking_text(text):
         unit = duration_match.group(2).lower()
         duration_minutes = num * 60 if 'hour' in unit or 'hr' in unit else num
 
-    found = search_dates(text, settings={'PREFER_DATES_FROM': 'future'})
-    if not found:
-        return None
-    matched_text, parsed_start = found[0]
+    # Handle "day after tomorrow" ourselves, since dateparser sometimes misreads it
+    explicit_date = None
+    cleaned_text = text
+    if re.search(r'day after tomorrow', text, re.IGNORECASE):
+        explicit_date = (datetime.now() + timedelta(days=2)).date()
+        cleaned_text = re.sub(r'day after tomorrow', '', text, flags=re.IGNORECASE)
 
-    if ':' not in matched_text:
-        parsed_start = parsed_start.replace(minute=0, second=0, microsecond=0)
+    found = search_dates(cleaned_text, settings={'PREFER_DATES_FROM': 'future'})
+    if not found and not explicit_date:
+        return None
+
+    if found:
+        matched_text, parsed_start = found[0]
+        if ':' not in matched_text:
+            parsed_start = parsed_start.replace(minute=0, second=0, microsecond=0)
+        else:
+            parsed_start = parsed_start.replace(second=0, microsecond=0)
     else:
-        parsed_start = parsed_start.replace(second=0, microsecond=0)
+        parsed_start = datetime.combine(explicit_date, datetime.min.time())
+
+    if explicit_date:
+        parsed_start = parsed_start.replace(
+            year=explicit_date.year, month=explicit_date.month, day=explicit_date.day
+        )
 
     parsed_end = parsed_start + timedelta(minutes=duration_minutes)
 
